@@ -5,6 +5,9 @@ from PIL import Image
 from ultralytics import YOLO
 import tempfile
 import os
+import av
+import threading
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -33,37 +36,60 @@ option = st.sidebar.selectbox(
 
 conf = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05)
 
-# --- 1. MODE KAMERA (NATIVE STREAMLIT) ---
-if option == "Kamera Langsung (Snapshot)":
-    st.header("Deteksi Wajah via Kamera")
-    st.info("Klik tombol 'Take Photo' di bawah untuk mengambil gambar wajah Anda secara real-time.")
-    
-    # Input Kamera Bawaan Streamlit (Stabil di Cloud)
-    img_file = st.camera_input("Ambil Foto")
+# --- 1. MODE WEBCAM REAL-TIME (WEBRTC) ---
+elif option == "Webcam Real-time":
+    st.header("Deteksi Masker via Webcam (Real-time)")
+    st.info("Klik START untuk mulai streaming webcam real-time.")
 
-    if img_file is not None:
-        # Konversi file upload ke Image
-        image = Image.open(img_file)
-        img_array = np.array(image)
-        
-        # Prediksi YOLO
-        results = model.predict(img_array, conf=conf)
-        res_plot = results[0].plot()
-        
-        # Tampilkan Hasil
-        st.image(res_plot, caption="Hasil Deteksi Saat Ini", use_container_width=True)
-        
-        # Hitung Statistik Sederhana
-        boxes = results[0].boxes
-        if len(boxes) > 0:
-            names = model.names
-            classes = boxes.cls.cpu().numpy()
-            detected = [names[int(c)] for c in classes]
-            
-            if "no_mask" in detected or "incorrect_mask" in detected:
-                st.error("⚠️ PELANGGARAN TERDETEKSI! Mohon gunakan masker dengan benar.")
-            else:
-                st.success("✅ PROTOKOL DIPATUHI. Terima kasih.")
+    # STUN server supaya WebRTC lebih mudah tembus NAT (penting saat deploy cloud)
+    rtc_configuration = RTCConfiguration(
+        {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+    )
+
+    # Lock supaya akses model aman saat async processing
+    model_lock = threading.Lock()
+
+    class YOLOVideoProcessor(VideoProcessorBase):
+        def __init__(self):
+            self.conf = conf  # ambil default saat init
+
+        def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+            img = frame.to_ndarray(format="bgr24")
+
+            # OPTIONAL: percepat dengan resize (turunkan resolusi)
+            img = cv2.resize(img, (640, 360))
+
+            with model_lock:
+                results = model.predict(img, conf=self.conf, verbose=False)
+            annotated = results[0].plot()  # biasanya BGR
+
+            # OPTIONAL: overlay status singkat di frame
+            status = "OK"
+            boxes = results[0].boxes
+            if boxes is not None and len(boxes) > 0:
+                names = model.names
+                classes = boxes.cls.cpu().numpy().astype(int)
+                detected = [names[c] for c in classes]
+                if "no_mask" in detected or "incorrect_mask" in detected:
+                    status = "VIOLATION"
+
+            cv2.putText(
+                annotated, status, (10, 35),
+                cv2.FONT_HERSHEY_SIMPLEX, 1.0,
+                (0, 0, 255) if status == "VIOLATION" else (0, 255, 0),
+                2, cv2.LINE_AA
+            )
+
+            return av.VideoFrame.from_ndarray(annotated, format="bgr24")
+
+    webrtc_ctx = webrtc_streamer(
+        key="mask-realtime",
+        rtc_configuration=rtc_configuration,
+        media_stream_constraints={"video": True, "audio": False},
+        video_processor_factory=YOLOVideoProcessor,
+        async_processing=True,   # biar tidak nge-freeze UI
+    )
+
                 
 # --- 2. MODE UPLOAD GAMBAR ---
 elif option == "Upload Gambar":
@@ -165,5 +191,6 @@ elif option == "Upload Video":
                 os.unlink(video_path)
             # File output dibiarkan agar st.video bisa memutarnya, 
             # Streamlit akan membersihkannya nanti saat sesi berakhir
+
 
 
