@@ -4,8 +4,6 @@ import numpy as np
 from PIL import Image
 from ultralytics import YOLO
 import tempfile
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
-import av
 import os
 
 # --- KONFIGURASI HALAMAN ---
@@ -15,14 +13,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- KONFIGURASI WEBRTC (PENTING UNTUK CLOUD) ---
-# Menggunakan Google STUN Server agar bisa tembus firewall
-RTC_CONFIGURATION = RTCConfiguration(
-    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-)
-
 st.title("😷 Sistem Deteksi Kepatuhan Masker Wajah")
-
 # --- LOAD MODEL ---
 @st.cache_resource
 def load_model():
@@ -42,33 +33,38 @@ option = st.sidebar.selectbox(
 
 conf = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05)
 
-# --- 1. MODE WEBCAM (STABIL) ---
-if option == "Webcam Real-time":
-    st.header("Deteksi Real-time via Webcam")
-    st.info("Jika webcam tidak muncul, pastikan browser mengizinkan akses kamera dan tunggu hingga 10-20 detik.")
+# --- 1. MODE KAMERA (NATIVE STREAMLIT) ---
+if option == "Kamera Langsung (Snapshot)":
+    st.header("Deteksi Wajah via Kamera")
+    st.info("Klik tombol 'Take Photo' di bawah untuk mengambil gambar wajah Anda secara real-time.")
     
-    class VideoProcessor:
-        def recv(self, frame):
-            img = frame.to_ndarray(format="bgr24")
-            
-            # Prediksi YOLO
-            # mirror=True membalik gambar agar seperti cermin (opsional)
-            img = cv2.flip(img, 1)
-            
-            results = model(img, conf=conf)
-            annotated_frame = results[0].plot()
-            
-            return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
+    # Input Kamera Bawaan Streamlit (Stabil di Cloud)
+    img_file = st.camera_input("Ambil Foto")
 
-    webrtc_streamer(
-        key="mask-detection",
-        mode=WebRtcMode.SENDRECV,
-        rtc_configuration=RTC_CONFIGURATION,
-        video_processor_factory=VideoProcessor,
-        media_stream_constraints={"video": True, "audio": False},
-        # BARIS DI BAWAH INI DIHAPUS AGAR STABIL:
-        # async_processing=True 
-    )
+    if img_file is not None:
+        # Konversi file upload ke Image
+        image = Image.open(img_file)
+        img_array = np.array(image)
+        
+        # Prediksi YOLO
+        results = model.predict(img_array, conf=conf)
+        res_plot = results[0].plot()
+        
+        # Tampilkan Hasil
+        st.image(res_plot, caption="Hasil Deteksi Saat Ini", use_container_width=True)
+        
+        # Hitung Statistik Sederhana
+        boxes = results[0].boxes
+        if len(boxes) > 0:
+            names = model.names
+            classes = boxes.cls.cpu().numpy()
+            detected = [names[int(c)] for c in classes]
+            
+            if "no_mask" in detected or "incorrect_mask" in detected:
+                st.error("⚠️ PELANGGARAN TERDETEKSI! Mohon gunakan masker dengan benar.")
+            else:
+                st.success("✅ PROTOKOL DIPATUHI. Terima kasih.")
+                
 # --- 2. MODE UPLOAD GAMBAR ---
 elif option == "Upload Gambar":
     st.header("Deteksi pada Gambar")
@@ -169,4 +165,5 @@ elif option == "Upload Video":
                 os.unlink(video_path)
             # File output dibiarkan agar st.video bisa memutarnya, 
             # Streamlit akan membersihkannya nanti saat sesi berakhir
+
 
