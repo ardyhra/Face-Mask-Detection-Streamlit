@@ -1,7 +1,9 @@
-streamlit
+streamlit>=1.28.0
 ultralytics
 opencv-python-headless
-streamlit-webrtc
+# Versi spesifik ini lebih stabil untuk STUN connection di Cloud
+streamlit-webrtc==0.47.0
+aioice==0.7.6
 numpy
 Pillow
 av
