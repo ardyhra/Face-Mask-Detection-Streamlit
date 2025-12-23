@@ -91,15 +91,8 @@ if option == "Webcam Real-time":
     
     webrtc_streamer(
         key="mask-realtime",
-        media_stream_constraints={
-            "video": {
-              "width": {"ideal": 640},
-              "height": {"ideal": 480},
-              "frameRate": {"ideal": 12, "max": 15},
-            },
-            "audio": False,
-        },
         rtc_configuration=rtc_configuration,
+        media_stream_constraints={"video": True, "audio": False},
         video_processor_factory=YOLOVideoProcessor,
         async_processing=True,
     )
@@ -205,6 +198,7 @@ elif option == "Upload Video":
                 os.unlink(video_path)
             # File output dibiarkan agar st.video bisa memutarnya, 
             # Streamlit akan membersihkannya nanti saat sesi berakhir
+
 
 
 
