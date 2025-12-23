@@ -37,7 +37,7 @@ option = st.sidebar.selectbox(
 conf = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05)
 
 # --- 1. MODE WEBCAM REAL-TIME (WEBRTC) ---
-elif option == "Webcam Real-time":
+if option == "Webcam Real-time":
     st.header("Deteksi Masker via Webcam (Real-time)")
     st.info("Klik START untuk mulai streaming webcam real-time.")
 
