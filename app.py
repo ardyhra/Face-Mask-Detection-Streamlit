@@ -51,8 +51,8 @@ if option == "Webcam Real-time":
             {
                 "urls": [
                     # ExpressTURN kamu
-                    f"turn:{st.secrets['TURN_HOST']}:{st.secrets['TURN_PORT']}:443?transport=udp",
-                    f"turn:{st.secrets['TURN_HOST']}:{st.secrets['TURN_PORT']}:80?transport=tcp",
+                    f"turn:{st.secrets['TURN_HOST']}:{st.secrets['TURN_PORT']}?transport=udp",
+                    f"turn:{st.secrets['TURN_HOST']}:{st.secrets['TURN_PORT']}?transport=tcp",
                 ],
                 "username": st.secrets["TURN_USERNAME"],
                 "credential": st.secrets["TURN_PASSWORD"],
@@ -206,6 +206,7 @@ elif option == "Upload Video":
                 os.unlink(video_path)
             # File output dibiarkan agar st.video bisa memutarnya, 
             # Streamlit akan membersihkannya nanti saat sesi berakhir
+
 
 
 
