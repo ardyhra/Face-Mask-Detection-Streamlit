@@ -102,7 +102,7 @@ if option == "Webcam Real-time":
         media_stream_constraints={"video": True, "audio": False},
         video_processor_factory=YOLOVideoProcessor,
         async_processing=True,
-    ))
+    )
 
                 
 # --- 2. MODE UPLOAD GAMBAR ---
@@ -205,6 +205,7 @@ elif option == "Upload Video":
                 os.unlink(video_path)
             # File output dibiarkan agar st.video bisa memutarnya, 
             # Streamlit akan membersihkannya nanti saat sesi berakhir
+
 
 
 
