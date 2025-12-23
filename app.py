@@ -7,6 +7,7 @@ import tempfile
 import os
 import av
 import threading
+import time
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 
 # --- KONFIGURASI HALAMAN ---
@@ -64,41 +65,40 @@ if option == "Webcam Real-time":
 
     class YOLOVideoProcessor(VideoProcessorBase):
         def __init__(self):
-            self.conf = conf  # ambil default saat init
+
+            self.last_out = None
+            self.last_infer = 0.0
+            self.min_interval = 0.2  # 0.2s => 5 FPS infer
 
         def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
             img = frame.to_ndarray(format="bgr24")
 
-            # OPTIONAL: percepat dengan resize (turunkan resolusi)
-            img = cv2.resize(img, (640, 360))
+            now = time.time()
+            if (self.last_out is None) or (now - self.last_infer >= self.min_interval):
+                # resize biar enteng
+                small = cv2.resize(img, (640, 360))
+                results = model.predict(small, conf=conf, verbose=False)
+                self.last_out = results[0].plot()
+                self.last_infer = now
+    
+            # return hasil terakhir (biar recv cepat dan tidak bikin backlog)
+            out = self.last_out if self.last_out is not None else img
 
-            with model_lock:
-                results = model.predict(img, conf=self.conf, verbose=False)
-            annotated = results[0].plot()  # biasanya BGR
 
-            # OPTIONAL: overlay status singkat di frame
-            status = "OK"
-            boxes = results[0].boxes
-            if boxes is not None and len(boxes) > 0:
-                names = model.names
-                classes = boxes.cls.cpu().numpy().astype(int)
-                detected = [names[c] for c in classes]
-                if "no_mask" in detected or "incorrect_mask" in detected:
-                    status = "VIOLATION"
-
-            cv2.putText(
-                annotated, status, (10, 35),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0,
-                (0, 0, 255) if status == "VIOLATION" else (0, 255, 0),
-                2, cv2.LINE_AA
-            )
-
-            return av.VideoFrame.from_ndarray(annotated, format="bgr24")
+            return av.VideoFrame.from_ndarray(out, format="bgr24")
 
     
     
     webrtc_streamer(
         key="mask-realtime",
+        media_stream_constraints={
+            "video": {
+              "width": {"ideal": 640},
+              "height": {"ideal": 480},
+              "frameRate": {"ideal": 12, "max": 15},
+            },
+            "audio": False,
+        },
         rtc_configuration=rtc_configuration,
         media_stream_constraints={"video": True, "audio": False},
         video_processor_factory=YOLOVideoProcessor,
