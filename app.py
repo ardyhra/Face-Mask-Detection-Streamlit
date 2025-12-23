@@ -42,7 +42,7 @@ option = st.sidebar.selectbox(
 
 conf = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05)
 
-# --- 1. MODE WEBCAM (WEB COMPATIBLE) ---
+# --- 1. MODE WEBCAM (STABIL) ---
 if option == "Webcam Real-time":
     st.header("Deteksi Real-time via Webcam")
     st.info("Jika webcam tidak muncul, pastikan browser mengizinkan akses kamera dan tunggu hingga 10-20 detik.")
@@ -52,6 +52,9 @@ if option == "Webcam Real-time":
             img = frame.to_ndarray(format="bgr24")
             
             # Prediksi YOLO
+            # mirror=True membalik gambar agar seperti cermin (opsional)
+            img = cv2.flip(img, 1)
+            
             results = model(img, conf=conf)
             annotated_frame = results[0].plot()
             
@@ -60,12 +63,12 @@ if option == "Webcam Real-time":
     webrtc_streamer(
         key="mask-detection",
         mode=WebRtcMode.SENDRECV,
-        rtc_configuration=RTC_CONFIGURATION, # <--- INI KUNCINYA
+        rtc_configuration=RTC_CONFIGURATION,
         video_processor_factory=VideoProcessor,
         media_stream_constraints={"video": True, "audio": False},
-        async_processing=True
+        # BARIS DI BAWAH INI DIHAPUS AGAR STABIL:
+        # async_processing=True 
     )
-
 # --- 2. MODE UPLOAD GAMBAR ---
 elif option == "Upload Gambar":
     st.header("Deteksi pada Gambar")
@@ -166,3 +169,4 @@ elif option == "Upload Video":
                 os.unlink(video_path)
             # File output dibiarkan agar st.video bisa memutarnya, 
             # Streamlit akan membersihkannya nanti saat sesi berakhir
+
