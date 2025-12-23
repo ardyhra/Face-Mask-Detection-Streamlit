@@ -85,7 +85,7 @@ elif option == "Upload Gambar":
         with col2:
             st.image(res_plot, caption="Hasil Deteksi", use_container_width=True)
 
-# --- 3. MODE UPLOAD VIDEO (FIXED MEMORY LEAK) ---
+# --- 3. MODE UPLOAD VIDEO (FIXED CODEC) ---
 elif option == "Upload Video":
     st.header("Deteksi pada Video")
     uploaded_video = st.file_uploader("Upload file video (MP4)", type=['mp4'])
@@ -96,7 +96,7 @@ elif option == "Upload Video":
         tfile.write(uploaded_video.read())
         video_path = tfile.name
         
-        st.warning("Sedang memproses video... Harap tunggu hingga selesai. Jangan refresh halaman.")
+        st.warning("Sedang memproses video... Harap tunggu. Jangan refresh halaman.")
         
         cap = cv2.VideoCapture(video_path)
         
@@ -105,9 +105,13 @@ elif option == "Upload Video":
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         
-        # Gunakan codec 'mp4v' yang kompatibel dengan OpenCV standar
+        # --- PERBAIKAN CODEC DISINI ---
+        # Menggunakan 'avc1' (H.264) agar bisa diputar di browser (Chrome/Edge/HP)
+        # Jika avc1 gagal, dia akan fallback ke mp4v (tapi mp4v sering blank di web)
         output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        
+        # Coba codec H.264
+        fourcc = cv2.VideoWriter_fourcc(*'avc1') 
         out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         
         progress_bar = st.progress(0)
@@ -137,9 +141,15 @@ elif option == "Upload Video":
         st.success("Pemrosesan Selesai!")
         
         # Tampilkan Video Hasil
-        # Kita perlu membaca ulang file output untuk ditampilkan di Streamlit
-        st.video(output_path)
+        # Buka file output dalam mode binary read ('rb')
+        try:
+            with open(output_path, 'rb') as f:
+                video_bytes = f.read()
+            st.video(video_bytes)
+        except Exception as e:
+            st.error(f"Gagal memuat video hasil: {e}")
         
-        # Opsional: Bersihkan file temporary
+        # Bersihkan file temporary
         os.unlink(video_path)
-        # os.unlink(output_path) # Jangan hapus dulu agar bisa ditonton
+        # os.unlink(output_path) # Biarkan file output agar tidak error saat replay
+
