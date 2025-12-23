@@ -42,22 +42,23 @@ if option == "Webcam Real-time":
     st.info("Klik START untuk mulai streaming webcam real-time.")
 
     # STUN server supaya WebRTC lebih mudah tembus NAT (penting saat deploy cloud)
-    rtc_configuration = RTCConfiguration({
+    rtc_configuration = {
+        "iceTransportPolicy": "relay",  # <- KUNCI untuk menghindari Forbidden IP
         "iceServers": [
-            # STUN boleh tetap ada
-            {"urls": ["stun:stun.l.google.com:19302"]},
+            # (opsional) STUN boleh dihapus kalau mau benar-benar TURN-only
+            # {"urls": ["stun:stun.l.google.com:19302"]},
     
-            # TURN ExpressTURN (pakai UDP + TCP)
             {
                 "urls": [
-                    f"turn:{st.secrets['TURN_HOST']}:{st.secrets['TURN_PORT']}?transport=udp",
-                    f"turn:{st.secrets['TURN_HOST']}:{st.secrets['TURN_PORT']}?transport=tcp",
+                    # ExpressTURN kamu
+                    f"turn:{st.secrets['TURN_HOST']}:{st.secrets['TURN_PORT']}:443?transport=udp",
+                    f"turn:{st.secrets['TURN_HOST']}:{st.secrets['TURN_PORT']}:80?transport=tcp",
                 ],
                 "username": st.secrets["TURN_USERNAME"],
                 "credential": st.secrets["TURN_PASSWORD"],
             },
-        ]
-    })
+        ],
+    }
     # Lock supaya akses model aman saat async processing
     model_lock = threading.Lock()
 
@@ -205,6 +206,7 @@ elif option == "Upload Video":
                 os.unlink(video_path)
             # File output dibiarkan agar st.video bisa memutarnya, 
             # Streamlit akan membersihkannya nanti saat sesi berakhir
+
 
 
 
