@@ -73,7 +73,7 @@ elif option == "Upload Gambar":
         col1, col2 = st.columns(2)
         
         # Baca gambar
-        image = Image.open(uploaded_file)
+        image = Image.open(uploaded_file).convert("RGB")
         img_array = np.array(image)
         
         with col1:
@@ -111,4 +111,5 @@ elif option == "Upload Video":
             # Tampilkan
             stframe.image(res_frame, caption="Sedang Memproses Video...", use_container_width=True)
             
+
         vf.release()
