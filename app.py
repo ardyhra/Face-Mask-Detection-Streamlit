@@ -4,8 +4,9 @@ import numpy as np
 from PIL import Image
 from ultralytics import YOLO
 import tempfile
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import av
+import os
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
@@ -14,18 +15,23 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- KONFIGURASI WEBRTC (PENTING UNTUK CLOUD) ---
+# Menggunakan Google STUN Server agar bisa tembus firewall
+RTC_CONFIGURATION = RTCConfiguration(
+    {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
+
 st.title("😷 Sistem Deteksi Kepatuhan Masker Wajah")
 
 # --- LOAD MODEL ---
 @st.cache_resource
 def load_model():
-    # Pastikan file best.pt sudah ada satu folder dengan app.py
     return YOLO("best.pt")
 
 try:
     model = load_model()
 except Exception as e:
-    st.error(f"Model tidak ditemukan. Pastikan file 'best.pt' ada di folder yang sama. Error: {e}")
+    st.error(f"Model tidak ditemukan. Error: {e}")
     st.stop()
 
 # --- SIDEBAR MENU ---
@@ -36,22 +42,16 @@ option = st.sidebar.selectbox(
 
 conf = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.25, 0.05)
 
-# --- FUNGSI PROSES GAMBAR ---
-def process_frame(frame, conf_threshold):
-    results = model.predict(frame, conf=conf_threshold)
-    return results[0].plot()
-
 # --- 1. MODE WEBCAM (WEB COMPATIBLE) ---
 if option == "Webcam Real-time":
     st.header("Deteksi Real-time via Webcam")
-    st.write("Tunggu sebentar hingga kotak video muncul. Izinkan akses kamera browser.")
+    st.info("Jika webcam tidak muncul, pastikan browser mengizinkan akses kamera dan tunggu hingga 10-20 detik.")
     
-    # Class callback untuk memproses video stream
     class VideoProcessor:
         def recv(self, frame):
             img = frame.to_ndarray(format="bgr24")
             
-            # Prediksi
+            # Prediksi YOLO
             results = model(img, conf=conf)
             annotated_frame = results[0].plot()
             
@@ -59,6 +59,8 @@ if option == "Webcam Real-time":
 
     webrtc_streamer(
         key="mask-detection",
+        mode=WebRtcMode.SENDRECV,
+        rtc_configuration=RTC_CONFIGURATION, # <--- INI KUNCINYA
         video_processor_factory=VideoProcessor,
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True
@@ -71,45 +73,73 @@ elif option == "Upload Gambar":
     
     if uploaded_file is not None:
         col1, col2 = st.columns(2)
-        
-        # Baca gambar
         image = Image.open(uploaded_file).convert("RGB")
         img_array = np.array(image)
         
         with col1:
             st.image(image, caption="Gambar Asli", use_container_width=True)
         
-        # Prediksi
-        res_image = process_frame(img_array, conf)
+        results = model.predict(img_array, conf=conf)
+        res_plot = results[0].plot()
         
         with col2:
-            st.image(res_image, caption="Hasil Deteksi", use_container_width=True)
+            st.image(res_plot, caption="Hasil Deteksi", use_container_width=True)
 
-# --- 3. MODE UPLOAD VIDEO ---
+# --- 3. MODE UPLOAD VIDEO (FIXED MEMORY LEAK) ---
 elif option == "Upload Video":
     st.header("Deteksi pada Video")
     uploaded_video = st.file_uploader("Upload file video (MP4)", type=['mp4'])
     
     if uploaded_video is not None:
-        # Simpan video ke file sementara
+        # Simpan file input sementara
         tfile = tempfile.NamedTemporaryFile(delete=False) 
         tfile.write(uploaded_video.read())
+        video_path = tfile.name
         
-        vf = cv2.VideoCapture(tfile.name)
+        st.warning("Sedang memproses video... Harap tunggu hingga selesai. Jangan refresh halaman.")
         
-        stframe = st.empty()
+        cap = cv2.VideoCapture(video_path)
         
-        while vf.isOpened():
-            ret, frame = vf.read()
+        # Persiapan output video
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        
+        # Gunakan codec 'mp4v' yang kompatibel dengan OpenCV standar
+        output_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        
+        progress_bar = st.progress(0)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        frame_count = 0
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
             if not ret:
                 break
             
-            # Proses frame
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            res_frame = process_frame(frame, conf)
+            # Prediksi
+            results = model.predict(frame, conf=conf, verbose=False)
+            res_frame = results[0].plot()
             
-            # Tampilkan
-            stframe.image(res_frame, caption="Sedang Memproses Video...", use_container_width=True)
+            # Tulis ke file output
+            out.write(res_frame)
             
-
-        vf.release()
+            # Update progress bar
+            frame_count += 1
+            if total_frames > 0:
+                progress_bar.progress(min(frame_count / total_frames, 1.0))
+            
+        cap.release()
+        out.release()
+        
+        st.success("Pemrosesan Selesai!")
+        
+        # Tampilkan Video Hasil
+        # Kita perlu membaca ulang file output untuk ditampilkan di Streamlit
+        st.video(output_path)
+        
+        # Opsional: Bersihkan file temporary
+        os.unlink(video_path)
+        # os.unlink(output_path) # Jangan hapus dulu agar bisa ditonton
